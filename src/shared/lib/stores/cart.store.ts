@@ -6,8 +6,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Product, CartItem } from '../../types';
 
+interface CartItemWithTax extends CartItem {
+  taxRate: number;
+}
+
 interface CartState {
-  items: CartItem[];
+  items: CartItemWithTax[];
   customerId?: string;
   customerName?: string;
   
@@ -18,7 +22,7 @@ interface CartState {
   total: number;
   
   // Actions
-  addItem: (product: Product, quantity: number) => void;
+  addItem: (product: Product, quantity: number, taxRate?: number) => void;
   removeItem: (itemId: string) => void;
   updateQuantity: (itemId: string, quantity: number) => void;
   clearCart: () => void;
@@ -26,12 +30,11 @@ interface CartState {
   clearCustomer: () => void;
 }
 
-const TAX_RATE = 0.18; // 18% GST
-
-function calculateTotals(items: CartItem[]) {
+function calculateTotals(items: CartItemWithTax[]) {
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const tax = subtotal * TAX_RATE;
+  // Calculate tax based on each item's tax rate
+  const tax = items.reduce((sum, item) => sum + (item.totalPrice * item.taxRate / 100), 0);
   const total = subtotal + tax;
   return { totalItems, subtotal, tax, total };
 }
@@ -47,13 +50,13 @@ export const useCartStore = create<CartState>()(
       tax: 0,
       total: 0,
       
-      addItem: (product, quantity) => {
+      addItem: (product, quantity, taxRate = 18) => {
         const items = get().items;
         const existingIndex = items.findIndex(
           (item) => item.product.id === product.id
         );
         
-        let newItems: CartItem[];
+        let newItems: CartItemWithTax[];
         
         if (existingIndex >= 0) {
           // Update existing item
@@ -70,12 +73,13 @@ export const useCartStore = create<CartState>()(
           });
         } else {
           // Add new item
-          const newItem: CartItem = {
+          const newItem: CartItemWithTax = {
             id: `cart_${Date.now()}_${Math.random().toString(36).substring(7)}`,
             product,
             quantity,
             unitPrice: product.price,
             totalPrice: product.price * quantity,
+            taxRate,
           };
           newItems = [...items, newItem];
         }

@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useState, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,14 +50,22 @@ import {
   ChevronsUpDown,
   Package,
   Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuthStore, useCartStore, useHasHydrated } from '@/shared/lib/stores';
+import { 
+  useAuthStore, 
+  useCartStore, 
+  useHasHydrated,
+  useCompanyStore,
+  useProductStore,
+  fetchProducts,
+} from '@/shared/lib/stores';
 import { useTranslation } from '@/shared/lib/language-context';
 import { AppShell } from '@/shared/components/app-shell';
 import { formatCurrency } from '@/shared/components/format-currency';
-import { productService, customerService, orderService } from '@/versions/v1/services';
-import type { Product, ProductCategory, Customer } from '@/shared/types';
+import { customerService, orderService } from '@/versions/v1/services';
+import type { ProductDisplay, Customer, ProductCategory } from '@/shared/types';
 
 function OrderPageContent() {
   const router = useRouter();
@@ -66,6 +74,18 @@ function OrderPageContent() {
   
   const { user, isAuthenticated } = useAuthStore();
   const hasHydrated = useHasHydrated();
+  const { selectedCompany } = useCompanyStore();
+  const { 
+    products, 
+    rawProducts,
+    isLoading: productsLoading, 
+    error: productsError,
+    setProducts,
+    setLoading: setProductsLoading,
+    setError: setProductsError,
+    lastCompanyId,
+    lastFinancialYear,
+  } = useProductStore();
   const {
     items,
     customerId,
@@ -83,18 +103,53 @@ function OrderPageContent() {
   } = useCartStore();
   const t = useTranslation();
   
-  const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const [showCartDialog, setShowCartDialog] = useState(showCart);
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
-  
+
+  // Fetch products when company changes
+  const loadProducts = useCallback(async () => {
+    if (!selectedCompany) return;
+    
+    const companyId = selectedCompany.companyId;
+    const financialYear = selectedCompany.financialYear;
+    
+    // Skip if already loaded for this company
+    if (lastCompanyId === companyId && lastFinancialYear === financialYear && products.length > 0) {
+      return;
+    }
+    
+    setProductsLoading(true);
+    setProductsError(null);
+    
+    try {
+      const result = await fetchProducts(companyId, financialYear);
+      
+      if (result.success && result.data && result.rawData && result.apiResponse) {
+        setProducts(result.data, result.rawData, result.apiResponse, selectedCompany);
+        
+        // Extract unique categories from products
+        const uniqueGroups = [...new Set(result.data.map(p => p.groupName))];
+        const categoryList: ProductCategory[] = uniqueGroups.map((name, index) => ({
+          id: index.toString(),
+          name,
+        }));
+        setCategories(categoryList);
+      } else {
+        setProductsError(result.error || 'Failed to load products');
+      }
+    } catch (error) {
+      console.error('Failed to load products:', error);
+      setProductsError('Failed to load products');
+    }
+  }, [selectedCompany, lastCompanyId, lastFinancialYear, products.length, setProducts, setProductsLoading, setProductsError]);
+
   useEffect(() => {
     // Only run after hydration is complete
     if (!hasHydrated) return;
@@ -103,8 +158,6 @@ function OrderPageContent() {
     const timer = setTimeout(() => {
       if (!isAuthenticated || !user) {
         window.location.href = '/login';
-      } else {
-        loadData();
       }
     }, 50);
     
@@ -116,34 +169,39 @@ function OrderPageContent() {
       setShowCartDialog(true);
     }
   }, [showCart]);
-  
-  const loadData = async () => {
-    try {
-      const [productsData, categoriesData] = await Promise.all([
-        productService.getAllProducts(),
-        productService.getCategories(),
-      ]);
-      
-      setProducts(productsData);
-      setCategories(categoriesData);
-      
-      // Load customers if salesman
-      if (user?.role === 'salesman') {
-        const customersData = await customerService.getAllCustomers();
-        setCustomers(customersData);
-      }
-    } catch (error) {
-      console.error('Failed to load data:', error);
-    } finally {
-      setIsLoading(false);
+
+  // Load products when company changes
+  useEffect(() => {
+    if (selectedCompany && isAuthenticated) {
+      loadProducts();
     }
-  };
+  }, [selectedCompany, isAuthenticated, loadProducts]);
   
+  // Load customers if salesman
+  useEffect(() => {
+    const loadCustomers = async () => {
+      if (user?.role === 'salesman') {
+        try {
+          const customersData = await customerService.getAllCustomers();
+          setCustomers(customersData);
+        } catch (error) {
+          console.error('Failed to load customers:', error);
+        }
+      }
+    };
+    
+    if (isAuthenticated && user) {
+      loadCustomers();
+    }
+  }, [isAuthenticated, user]);
+
+  // Filter products by category and search
   const filteredProducts = products.filter(p => {
-    const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
+    const matchesCategory = selectedCategory === 'all' || p.groupName === selectedCategory;
     const matchesSearch = !searchQuery || 
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+      p.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.productId.toString().includes(searchQuery);
     return matchesCategory && matchesSearch;
   });
   
@@ -151,9 +209,24 @@ function OrderPageContent() {
     c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
     c.phone.includes(customerSearch)
   );
-  
-  const handleAddToCart = (product: Product) => {
-    addItem(product, 1);
+
+  // Helper to convert ProductDisplay to legacy Product format for cart
+  const convertToCartProduct = (product: ProductDisplay) => ({
+    id: product.id,
+    sku: product.hsnCode,
+    name: product.name,
+    description: '',
+    price: product.price,
+    currency: 'INR',
+    unit: product.unit,
+    category: product.groupName,
+    stock: product.stock,
+    isActive: true,
+  });
+
+  const handleAddToCart = (product: ProductDisplay) => {
+    const cartProduct = convertToCartProduct(product);
+    addItem(cartProduct, 1, product.taxRate);
   };
   
   const getProductQuantityInCart = (productId: string): number => {
@@ -231,9 +304,9 @@ function OrderPageContent() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{t.order.title}</h1>
             <p className="text-muted-foreground">
-              {user.role === 'salesman' 
-                ? `${t.cart.orderFor}: ${customerName || 'Select customer'}`
-                : t.order.products}
+              {selectedCompany 
+                ? `${selectedCompany.companyName} - FY: ${selectedCompany.financialYear}`
+                : 'Select a company to view products'}
             </p>
           </div>
           
@@ -299,38 +372,80 @@ function OrderPageContent() {
           </div>
         </div>
         
+        {/* Company not selected warning */}
+        {!selectedCompany && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="flex items-center gap-3 p-4">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <div>
+                <p className="font-medium text-yellow-800">No Company Selected</p>
+                <p className="text-sm text-yellow-700">
+                  Please select a company from the header dropdown to view products.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        {/* Error state */}
+        {productsError && (
+          <Card className="border-destructive bg-destructive/10">
+            <CardContent className="flex items-center gap-3 p-4">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="font-medium text-destructive">Error Loading Products</p>
+                <p className="text-sm text-destructive/80">{productsError}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadProducts} className="ml-auto">
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        
         {/* Filters */}
-        <div className="flex flex-col gap-4 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search products..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+        {selectedCompany && (
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, HSN code, or product ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder={t.order.category} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t.order.allCategories}</SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.name}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder={t.order.category} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t.order.allCategories}</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat.id} value={cat.name}>
-                  {cat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        )}
         
         {/* Products Grid - 2 cols on mobile, 6 cols on desktop */}
-        {isLoading ? (
-          <div className="flex justify-center py-12">
+        {productsLoading ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-2">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Loading products...</p>
           </div>
-        ) : (
+        ) : selectedCompany && products.length === 0 && !productsError ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-2">
+            <Package className="h-12 w-12 text-muted-foreground" />
+            <p className="text-lg font-medium">No Products Found</p>
+            <p className="text-sm text-muted-foreground">
+              No products available for this company.
+            </p>
+          </div>
+        ) : selectedCompany && (
           <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {filteredProducts.map((product) => {
               const quantityInCart = getProductQuantityInCart(product.id);
@@ -346,25 +461,34 @@ function OrderPageContent() {
                       <div className="flex items-start justify-between gap-1">
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-xs sm:text-sm line-clamp-1">{product.name}</p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground">{product.sku}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            ID: {product.productId} • {product.unit}
+                          </p>
                         </div>
                         <Badge variant="outline" className="shrink-0 text-[10px] px-1 py-0 h-4 sm:h-5">
-                          {product.category}
+                          {product.groupName}
                         </Badge>
                       </div>
-                      <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 hidden sm:block">
-                        {product.description}
-                      </p>
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm sm:text-base">
-                          {formatCurrency(product.price)}
-                        </span>
+                        <div>
+                          <span className="font-bold text-sm sm:text-base">
+                            {formatCurrency(product.price)}
+                          </span>
+                          {product.mrp > product.price && (
+                            <span className="text-[10px] text-muted-foreground line-through ml-1">
+                              {formatCurrency(product.mrp)}
+                            </span>
+                          )}
+                        </div>
                         <Badge 
                           variant={product.stock > 0 ? "default" : "secondary"} 
                           className="text-[10px] px-1 py-0 h-4 sm:h-5"
                         >
                           {product.stock > 0 ? product.stock : 'Out'}
                         </Badge>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {product.taxName} ({product.taxRate}%)
                       </div>
                       
                       {quantityInCart > 0 ? (

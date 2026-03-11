@@ -71,6 +71,57 @@ export interface CustomerSummary {
 
 // ==================== PRODUCT ====================
 
+// Live API Product - Full response from api.busynotify.in
+export interface ApiProduct {
+  product_id: number;
+  product_name: string;
+  product_alias: string;
+  product_print_name: string;
+  product_sales_price: number;
+  product_purchase_price: number;
+  product_mrp: number;
+  product_group_name: string;
+  product_group_id: number;
+  product_unit: string;
+  product_mc_name: string | null;
+  product_mc_code: number;
+  product_tax_name: string;
+  product_tax_id: number;
+  product_hsn_code: string;
+  product_tax_rate: number;
+  product_stock: number;
+  product_price: number;
+  product_sales_discount: number;
+  product_sales_markup: number;
+  product_purchase_discount: number;
+  product_description_line1: string | null;
+  product_description_line2: string | null;
+  product_description_line3: string | null;
+  product_description_line4: string | null;
+  product_created_by: string;
+  product_creation_time: string;
+  product_modified_by: string;
+  product_modification_time: string;
+}
+
+// Essential product fields for display (Phase 1)
+export interface ProductDisplay {
+  id: string;
+  productId: number;
+  name: string;
+  price: number;
+  mrp: number;
+  stock: number;
+  unit: string;
+  taxRate: number;
+  taxName: string;
+  groupName: string;
+  hsnCode: string;
+  // Keep reference to full product data
+  _fullData?: ApiProduct;
+}
+
+// Legacy Product type (for backward compatibility)
 export interface Product {
   id: string;
   sku: string;
@@ -83,6 +134,19 @@ export interface Product {
   stock: number;
   imageUrl?: string;
   isActive: boolean;
+}
+
+export interface ProductApiResponse {
+  success: boolean;
+  data: ApiProduct[];
+  metadata: {
+    companyId: number;
+    companyCode: string;
+    financialYear: string;
+    rowCount: number;
+    executionTime: string;
+    executedAt: string;
+  };
 }
 
 export interface ProductCategory {
