@@ -5,7 +5,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +22,6 @@ import { useTranslation } from '@/shared/lib/language-context';
 import { authService } from '@/versions/v1/services';
 
 export default function LoginPage() {
-  const router = useRouter();
   const { isAuthenticated, setSession, setLoading, setError, error, isLoading } = useAuthStore();
   const hasHydrated = useHasHydrated();
   const t = useTranslation();
@@ -33,9 +31,10 @@ export default function LoginPage() {
   useEffect(() => {
     // Only redirect after hydration is complete
     if (hasHydrated && isAuthenticated) {
-      router.replace('/dashboard');
+      // Use window.location.href for full page reload
+      window.location.href = '/dashboard';
     }
-  }, [hasHydrated, isAuthenticated, router]);
+  }, [hasHydrated, isAuthenticated]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,15 +46,19 @@ export default function LoginPage() {
       
       if (result.success && result.session) {
         setSession(result.session);
-        router.replace('/dashboard');
+        // Use window.location.href to force a full page reload
+        // This ensures localStorage is properly read by the dashboard
+        // Without this, there's a race condition between Zustand persist and navigation
+        window.location.href = '/dashboard';
       } else {
         setError(result.error || t.auth.invalidCredentials);
+        setLoading(false);
       }
     } catch (err) {
       setError('An error occurred. Please try again.');
-    } finally {
       setLoading(false);
     }
+    // Don't call setLoading(false) on success since we're navigating away
   };
   
   // Show loading until hydration is complete

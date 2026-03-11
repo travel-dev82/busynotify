@@ -39,15 +39,17 @@ export default function DashboardPage() {
     // Only run after hydration is complete
     if (!hasHydrated) return;
     
-    if (!isAuthenticated) {
-      router.replace('/login');
-      return;
-    }
+    // Small delay to ensure store is fully hydrated
+    const timer = setTimeout(() => {
+      if (!isAuthenticated || !user) {
+        window.location.href = '/login';
+      } else {
+        loadDashboardData();
+      }
+    }, 50);
     
-    if (user) {
-      loadDashboardData();
-    }
-  }, [hasHydrated, isAuthenticated, user, router]);
+    return () => clearTimeout(timer);
+  }, [hasHydrated, isAuthenticated, user]);
   
   const loadDashboardData = async () => {
     try {

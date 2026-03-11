@@ -100,13 +100,17 @@ function OrderPageContent() {
     // Only run after hydration is complete
     if (!hasHydrated) return;
     
-    if (!isAuthenticated) {
-      router.replace('/login');
-      return;
-    }
+    // Small delay to ensure store is fully hydrated
+    const timer = setTimeout(() => {
+      if (!isAuthenticated || !user) {
+        window.location.href = '/login';
+      } else {
+        loadData();
+      }
+    }, 50);
     
-    loadData();
-  }, [hasHydrated, isAuthenticated, router, user]);
+    return () => clearTimeout(timer);
+  }, [hasHydrated, isAuthenticated, user]);
   
   useEffect(() => {
     if (showCart) {
