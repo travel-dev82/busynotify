@@ -3,7 +3,7 @@
 // =====================================================
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User, Role, AuthSession } from '../../types';
 
 interface AuthState {
@@ -12,6 +12,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  _hasHydrated: boolean;
   
   // Actions
   setUser: (user: User | null) => void;
@@ -19,6 +20,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   logout: () => void;
+  setHasHydrated: (state: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -29,6 +31,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      _hasHydrated: false,
       
       setUser: (user) => set({ 
         user, 
@@ -52,14 +55,20 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: false,
         error: null,
       }),
+      
+      setHasHydrated: (_hasHydrated) => set({ _hasHydrated }),
     }),
     {
       name: 'busy-notify-auth',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         user: state.user,
         token: state.token,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );
@@ -68,3 +77,4 @@ export const useAuthStore = create<AuthState>()(
 export const useUser = () => useAuthStore((state) => state.user);
 export const useIsAuthenticated = () => useAuthStore((state) => state.isAuthenticated);
 export const useUserRole = (): Role | null => useAuthStore((state) => state.user?.role || null);
+export const useHasHydrated = () => useAuthStore((state) => state._hasHydrated);

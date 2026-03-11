@@ -6,14 +6,17 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/shared/lib/stores';
+import { useAuthStore, useHasHydrated } from '@/shared/lib/stores';
 
 export default function HomePage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
+  const hasHydrated = useHasHydrated();
   
   useEffect(() => {
-    // Use a small timeout to ensure hydration is complete
+    // Wait for hydration before redirecting
+    if (!hasHydrated) return;
+    
     const timer = setTimeout(() => {
       if (isAuthenticated) {
         router.replace('/dashboard');
@@ -23,7 +26,7 @@ export default function HomePage() {
     }, 0);
     
     return () => clearTimeout(timer);
-  }, [isAuthenticated, router]);
+  }, [hasHydrated, isAuthenticated, router]);
   
   return (
     <div className="flex min-h-screen items-center justify-center">

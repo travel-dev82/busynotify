@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
   Clock,
   CheckCircle2,
 } from 'lucide-react';
-import { useAuthStore } from '@/shared/lib/stores';
+import { useAuthStore, useHasHydrated } from '@/shared/lib/stores';
 import { useTranslation } from '@/shared/lib/language-context';
 import { AppShell } from '@/shared/components/app-shell';
 import { formatCurrency } from '@/shared/components/format-currency';
@@ -25,8 +25,8 @@ import type { Order, OrderSummary } from '@/shared/types';
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
+  const hasHydrated = useHasHydrated();
   const t = useTranslation();
-  const redirectAttempted = useRef(false);
   const [recentOrders, setRecentOrders] = useState<OrderSummary[]>([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -36,17 +36,18 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
-    // Only redirect once to avoid loops
-    if (!isAuthenticated && !redirectAttempted.current) {
-      redirectAttempted.current = true;
+    // Only run after hydration is complete
+    if (!hasHydrated) return;
+    
+    if (!isAuthenticated) {
       router.replace('/login');
       return;
     }
     
-    if (isAuthenticated && user) {
+    if (user) {
       loadDashboardData();
     }
-  }, [isAuthenticated, user, router]);
+  }, [hasHydrated, isAuthenticated, user, router]);
   
   const loadDashboardData = async () => {
     try {
@@ -82,6 +83,15 @@ export default function DashboardPage() {
       setIsLoading(false);
     }
   };
+  
+  // Show loading until hydration is complete
+  if (!hasHydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
   
   // Show loading if not authenticated (will redirect)
   if (!isAuthenticated || !user) {

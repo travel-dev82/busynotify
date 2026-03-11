@@ -53,7 +53,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuthStore, useCartStore } from '@/shared/lib/stores';
+import { useAuthStore, useCartStore, useHasHydrated } from '@/shared/lib/stores';
 import { useTranslation } from '@/shared/lib/language-context';
 import { AppShell } from '@/shared/components/app-shell';
 import { formatCurrency } from '@/shared/components/format-currency';
@@ -66,6 +66,7 @@ function OrderPageContent() {
   const showCart = searchParams.get('cart') === 'true';
   
   const { user, isAuthenticated } = useAuthStore();
+  const hasHydrated = useHasHydrated();
   const {
     items,
     customerId,
@@ -83,7 +84,6 @@ function OrderPageContent() {
   } = useCartStore();
   const t = useTranslation();
   
-  const [mounted, setMounted] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -97,11 +97,8 @@ function OrderPageContent() {
   const [orderSuccess, setOrderSuccess] = useState(false);
   
   useEffect(() => {
-    setMounted(true);
-  }, []);
-  
-  useEffect(() => {
-    if (!mounted) return;
+    // Only run after hydration is complete
+    if (!hasHydrated) return;
     
     if (!isAuthenticated) {
       router.replace('/login');
@@ -109,7 +106,13 @@ function OrderPageContent() {
     }
     
     loadData();
-  }, [mounted, isAuthenticated, router, user]);
+  }, [hasHydrated, isAuthenticated, router, user]);
+  
+  useEffect(() => {
+    if (showCart) {
+      setShowCartDialog(true);
+    }
+  }, [showCart]);
   
   const loadData = async () => {
     try {
@@ -200,8 +203,8 @@ function OrderPageContent() {
     }
   };
   
-  // Don't render until mounted to avoid hydration issues
-  if (!mounted) {
+  // Don't render until hydrated to avoid hydration issues
+  if (!hasHydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

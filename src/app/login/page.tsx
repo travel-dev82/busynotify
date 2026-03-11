@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,25 +18,24 @@ import {
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Package, Loader2 } from 'lucide-react';
-import { useAuthStore } from '@/shared/lib/stores';
+import { useAuthStore, useHasHydrated } from '@/shared/lib/stores';
 import { useTranslation } from '@/shared/lib/language-context';
 import { authService } from '@/versions/v1/services';
 
 export default function LoginPage() {
   const router = useRouter();
   const { isAuthenticated, setSession, setLoading, setError, error, isLoading } = useAuthStore();
+  const hasHydrated = useHasHydrated();
   const t = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const redirectAttempted = useRef(false);
   
   useEffect(() => {
-    // Only redirect once to avoid loops
-    if (isAuthenticated && !redirectAttempted.current) {
-      redirectAttempted.current = true;
+    // Only redirect after hydration is complete
+    if (hasHydrated && isAuthenticated) {
       router.replace('/dashboard');
     }
-  }, [isAuthenticated, router]);
+  }, [hasHydrated, isAuthenticated, router]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +57,15 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+  
+  // Show loading until hydration is complete
+  if (!hasHydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
   
   // Show loading if authenticated (will redirect)
   if (isAuthenticated) {

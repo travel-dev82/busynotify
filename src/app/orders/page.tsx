@@ -23,7 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Package, Eye, Loader2 } from 'lucide-react';
-import { useAuthStore } from '@/shared/lib/stores';
+import { useAuthStore, useHasHydrated } from '@/shared/lib/stores';
 import { useTranslation } from '@/shared/lib/language-context';
 import { AppShell } from '@/shared/components/app-shell';
 import { OrderStatusBadge } from '@/shared/components/order-status-badge';
@@ -34,9 +34,9 @@ import type { Order } from '@/shared/types';
 export default function OrdersPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
+  const hasHydrated = useHasHydrated();
   const t = useTranslation();
   
-  const [mounted, setMounted] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -44,11 +44,8 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   
   useEffect(() => {
-    setMounted(true);
-  }, []);
-  
-  useEffect(() => {
-    if (!mounted) return;
+    // Only run after hydration is complete
+    if (!hasHydrated) return;
     
     if (!isAuthenticated) {
       router.replace('/login');
@@ -56,7 +53,7 @@ export default function OrdersPage() {
     }
     
     loadOrders();
-  }, [mounted, isAuthenticated, router, user]);
+  }, [hasHydrated, isAuthenticated, router, user]);
   
   useEffect(() => {
     if (statusFilter === 'all') {
@@ -97,8 +94,8 @@ export default function OrdersPage() {
     });
   };
   
-  // Don't render until mounted to avoid hydration issues
-  if (!mounted) {
+  // Show loading until hydration is complete
+  if (!hasHydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
