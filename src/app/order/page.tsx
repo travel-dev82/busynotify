@@ -6,10 +6,9 @@
 
 import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -226,7 +225,7 @@ function OrderPageContent() {
   
   return (
     <AppShell>
-      <div className="space-y-6">
+      <div className={cn("space-y-6", totalItems > 0 && "pb-20 lg:pb-0")}>
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -326,87 +325,92 @@ function OrderPageContent() {
           </Select>
         </div>
         
-        {/* Products Grid */}
+        {/* Products Grid - 2 cols on mobile, 6 cols on desktop */}
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {filteredProducts.map((product) => {
               const quantityInCart = getProductQuantityInCart(product.id);
               
               return (
                 <Card key={product.id} className="overflow-hidden">
+                  {/* Smaller image area */}
                   <div className="aspect-square bg-muted flex items-center justify-center">
-                    <Package className="h-12 w-12 text-muted-foreground" />
+                    <Package className="h-8 w-8 text-muted-foreground sm:h-10 sm:w-10" />
                   </div>
-                  <CardContent className="p-4">
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-medium line-clamp-1">{product.name}</p>
-                          <p className="text-xs text-muted-foreground">{product.sku}</p>
+                  <CardContent className="p-2 sm:p-3">
+                    <div className="space-y-1 sm:space-y-2">
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-xs sm:text-sm line-clamp-1">{product.name}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">{product.sku}</p>
                         </div>
-                        <Badge variant="outline" className="shrink-0">
+                        <Badge variant="outline" className="shrink-0 text-[10px] px-1 py-0 h-4 sm:h-5">
                           {product.category}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
+                      <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 hidden sm:block">
                         {product.description}
                       </p>
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-lg">
+                        <span className="font-bold text-sm sm:text-base">
                           {formatCurrency(product.price)}
                         </span>
-                        <Badge variant={product.stock > 0 ? "default" : "secondary"}>
-                          {product.stock > 0 ? `${product.stock} ${t.order.inStock}` : t.order.outOfStock}
+                        <Badge 
+                          variant={product.stock > 0 ? "default" : "secondary"} 
+                          className="text-[10px] px-1 py-0 h-4 sm:h-5"
+                        >
+                          {product.stock > 0 ? product.stock : 'Out'}
                         </Badge>
                       </div>
                       
                       {quantityInCart > 0 ? (
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
                             <Button
                               variant="outline"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-6 w-6 sm:h-7 sm:w-7"
                               onClick={() => updateQuantity(
                                 items.find(i => i.product.id === product.id)?.id || '',
                                 quantityInCart - 1
                               )}
                             >
-                              <Minus className="h-4 w-4" />
+                              <Minus className="h-3 w-3" />
                             </Button>
-                            <span className="w-8 text-center font-medium">{quantityInCart}</span>
+                            <span className="w-5 sm:w-6 text-center text-xs sm:text-sm font-medium">{quantityInCart}</span>
                             <Button
                               variant="outline"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-6 w-6 sm:h-7 sm:w-7"
                               onClick={() => handleAddToCart(product)}
                               disabled={product.stock <= quantityInCart}
                             >
-                              <Plus className="h-4 w-4" />
+                              <Plus className="h-3 w-3" />
                             </Button>
                           </div>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive"
+                            className="h-6 w-6 sm:h-7 sm:w-7 text-destructive"
                             onClick={() => removeItem(
                               items.find(i => i.product.id === product.id)?.id || ''
                             )}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
                       ) : (
                         <Button
-                          className="w-full"
+                          className="w-full h-7 sm:h-8 text-xs"
+                          size="sm"
                           onClick={() => handleAddToCart(product)}
                           disabled={product.stock === 0}
                         >
-                          <Plus className="mr-2 h-4 w-4" />
+                          <Plus className="mr-1 h-3 w-3" />
                           {t.order.addToCart}
                         </Button>
                       )}
@@ -415,6 +419,46 @@ function OrderPageContent() {
                 </Card>
               );
             })}
+          </div>
+        )}
+        
+        {/* Mobile Sticky Cart Footer */}
+        {totalItems > 0 && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
+            <div className="bg-background/95 backdrop-blur-sm border-t shadow-lg">
+              <div className="flex items-center justify-between px-4 py-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1">
+                    <ShoppingCart className="h-4 w-4 text-primary" />
+                    <span className="font-medium text-sm">{totalItems}</span>
+                    <span className="text-xs text-muted-foreground">items</span>
+                  </div>
+                  <Separator orientation="vertical" className="h-4" />
+                  <div>
+                    <span className="font-bold text-sm">{formatCurrency(total)}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-destructive hover:text-destructive"
+                    onClick={clearCart}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setShowCartDialog(true)}
+                  >
+                    View Cart
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {/* Safe area padding for iOS */}
+            <div className="h-[env(safe-area-inset-bottom)] bg-background/95" />
           </div>
         )}
         
