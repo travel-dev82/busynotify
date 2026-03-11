@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Disable trailing slashes to prevent redirect loop with gateway/proxy
+  trailingSlash: false,
+  // Skip trailing slash redirects entirely
+  skipTrailingSlashRedirect: true,
 };
 
 export default nextConfig;
