@@ -10,6 +10,7 @@ interface CompanyState {
   selectedCompany: Company | null;
   companies: Company[];
   isLoading: boolean;
+  isProductsLoading: boolean; // Separate loading state for products fetch
   error: string | null;
   _hasHydrated: boolean;
   
@@ -17,6 +18,7 @@ interface CompanyState {
   setSelectedCompany: (company: Company | null) => void;
   setCompanies: (companies: Company[]) => void;
   setLoading: (loading: boolean) => void;
+  setProductsLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearCompany: () => void;
   setHasHydrated: (state: boolean) => void;
@@ -31,6 +33,7 @@ export const useCompanyStore = create<CompanyState>()(
       selectedCompany: null,
       companies: [],
       isLoading: false,
+      isProductsLoading: false,
       error: null,
       // Default to true on server, false on client (will be set to true after hydration)
       _hasHydrated: !isClient,
@@ -40,6 +43,8 @@ export const useCompanyStore = create<CompanyState>()(
       setCompanies: (companies) => set({ companies }),
       
       setLoading: (isLoading) => set({ isLoading }),
+      
+      setProductsLoading: (isProductsLoading) => set({ isProductsLoading }),
       
       setError: (error) => set({ error }),
       

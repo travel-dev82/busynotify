@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -28,16 +28,23 @@ export function CompanySelector() {
     isLoading,
     setLoading,
     error,
-    setError 
+    setError,
+    _hasHydrated,
   } = useCompanyStore();
   
   const [mounted, setMounted] = useState(false);
+  const hasAutoSelected = useRef(false);
+  const hasFetchedCompanies = useRef(false);
 
   // Fetch companies on mount
   useEffect(() => {
     setMounted(true);
     
+    // Don't fetch if already fetched
+    if (hasFetchedCompanies.current) return;
+    
     const fetchCompanies = async () => {
+      hasFetchedCompanies.current = true;
       setLoading(true);
       setError(null);
       
@@ -53,11 +60,6 @@ export function CompanySelector() {
         
         if (data.success && data.data) {
           setCompanies(data.data);
-          
-          // Auto-select first company if none selected
-          if (data.data.length > 0 && !selectedCompany) {
-            setSelectedCompany(data.data[0]);
-          }
         } else {
           setError(data.error || 'Failed to fetch companies');
         }
@@ -70,7 +72,22 @@ export function CompanySelector() {
     };
 
     fetchCompanies();
-  }, []);
+  }, [setCompanies, setLoading, setError]);
+
+  // Auto-select logic - only after hydration is complete
+  useEffect(() => {
+    // Wait for hydration to complete
+    if (!_hasHydrated) return;
+    
+    // Only auto-select once
+    if (hasAutoSelected.current) return;
+    
+    // Only auto-select if no company is selected and we have companies
+    if (!selectedCompany && companies.length > 0) {
+      hasAutoSelected.current = true;
+      setSelectedCompany(companies[0]);
+    }
+  }, [_hasHydrated, selectedCompany, companies, setSelectedCompany]);
 
   const handleCompanyChange = (companyId: string) => {
     const company = companies.find((c: Company) => c.companyId.toString() === companyId);
@@ -84,12 +101,12 @@ export function CompanySelector() {
     return (
       <div className="flex items-center gap-2">
         <Building2 className="h-4 w-4 text-muted-foreground" />
-        <div className="h-8 w-40 animate-pulse rounded bg-muted" />
+        <div className="h-9 w-[180px] sm:w-[220px] animate-pulse rounded bg-muted" />
       </div>
     );
   }
 
-  if (isLoading) {
+  if (isLoading && companies.length === 0) {
     return (
       <div className="flex items-center gap-2">
         <Building2 className="h-4 w-4 text-muted-foreground" />
