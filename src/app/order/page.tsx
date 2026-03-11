@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, Suspense, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,9 +71,6 @@ import { FooterBar, MobileCartFooter } from '@/shared/components/footer-bar';
 import { customerService, orderService } from '@/versions/v1/services';
 import type { ProductDisplay, Customer, ProductCategory } from '@/shared/types';
 
-// Constants
-const DEFAULT_PAGE_SIZE = 25;
-
 // Header Actions Component - Renders in AppShell header
 function OrderHeaderActions({ 
   totalItems, 
@@ -121,7 +118,7 @@ function OrderPageInner() {
   
   const { user, isAuthenticated } = useAuthStore();
   const hasHydrated = useHasHydrated();
-  const { selectedCompany, setProductsLoading: setCompanyProductsLoading } = useCompanyStore();
+  const { selectedCompany } = useCompanyStore();
   const { 
     products, 
     isLoading: productsLoading, 
@@ -150,6 +147,10 @@ function OrderPageInner() {
   const { pageSize } = usePaginationStore();
   const t = useTranslation();
   
+  // Track if we've loaded products for the current company
+  const loadedCompanyKeyRef = useRef<string | null>(null);
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
+  
   // Local state
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -161,6 +162,28 @@ function OrderPageInner() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [currentPage, setLocalCurrentPage] = useState(1);
+
+  // Get the company key for tracking loaded state
+  const currentCompanyKey = selectedCompany 
+    ? `${selectedCompany.companyId}-${selectedCompany.financialYear}` 
+    : null;
+
+  // Determine if we're currently loading
+  const isLoadingProducts = useMemo(() => {
+    if (!selectedCompany) return false;
+    // Show loading if productsLoading OR if we haven't loaded for this company yet
+    const notYetLoaded = loadedCompanyKeyRef.current !== currentCompanyKey;
+    return productsLoading || (notYetLoaded && !productsError);
+  }, [selectedCompany, productsLoading, productsError, currentCompanyKey]);
+
+  // Check if we should show "No products found" (only after loading is complete)
+  const showNoProducts = useMemo(() => {
+    if (!selectedCompany) return false;
+    if (productsLoading) return false;
+    if (productsError) return false;
+    // Only show if we've loaded for this company and have no products
+    return loadedCompanyKeyRef.current === currentCompanyKey && products.length === 0;
+  }, [selectedCompany, productsLoading, productsError, products.length, currentCompanyKey]);
 
   // Calculate total pages and paginated products
   const filteredProducts = useMemo(() => {
@@ -179,28 +202,20 @@ function OrderPageInner() {
   }, [filteredProducts.length, pageSize]);
 
   const paginatedProducts = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = Math.min(startIndex + pageSize, filteredProducts.length);
-    return filteredProducts.slice(startIndex, endIndex);
+    const start = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
   }, [filteredProducts, currentPage, pageSize]);
 
-  // Calculate start and end indices for display
+  // Calculate display indices
   const startIndex = filteredProducts.length > 0 ? ((currentPage - 1) * pageSize) + 1 : 0;
   const endIndex = Math.min(currentPage * pageSize, filteredProducts.length);
 
-  // Reset to page 1 when filters change
+  // Reset page when filters change
   useEffect(() => {
     setLocalCurrentPage(1);
   }, [selectedCategory, searchQuery]);
 
-  // Ensure current page is valid
-  useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) {
-      setLocalCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
-
-  // Header actions - rendered in AppShell header
+  // Header actions
   const headerActions = useMemo(() => (
     <OrderHeaderActions
       totalItems={totalItems}
@@ -210,22 +225,23 @@ function OrderPageInner() {
     />
   ), [totalItems, total, clearCart]);
 
-  // Set header actions in AppShell
   useSetHeaderActions(headerActions);
 
-  // Fetch products when company changes
+  // Load products when company changes
   const loadProducts = useCallback(async () => {
     if (!selectedCompany) return;
     
     const companyId = selectedCompany.companyId;
     const financialYear = selectedCompany.financialYear;
+    const companyKey = `${companyId}-${financialYear}`;
     
+    // Skip if already loaded
     if (lastCompanyId === companyId && lastFinancialYear === financialYear && products.length > 0) {
+      loadedCompanyKeyRef.current = companyKey;
       return;
     }
     
     setProductsLoading(true);
-    setCompanyProductsLoading(true);
     setProductsError(null);
     
     try {
@@ -233,6 +249,7 @@ function OrderPageInner() {
       
       if (result.success && result.data && result.rawData && result.apiResponse) {
         setProducts(result.data, result.rawData, result.apiResponse, selectedCompany);
+        loadedCompanyKeyRef.current = companyKey;
         
         const uniqueGroups = [...new Set(result.data.map(p => p.groupName))];
         const categoryList: ProductCategory[] = uniqueGroups.map((name, index) => ({
@@ -242,15 +259,16 @@ function OrderPageInner() {
         setCategories(categoryList);
       } else {
         setProductsError(result.error || 'Failed to load products');
+        loadedCompanyKeyRef.current = companyKey;
       }
     } catch (error) {
       console.error('Failed to load products:', error);
       setProductsError('Failed to load products');
-    } finally {
-      setCompanyProductsLoading(false);
+      loadedCompanyKeyRef.current = companyKey;
     }
-  }, [selectedCompany, lastCompanyId, lastFinancialYear, products.length, setProducts, setProductsLoading, setProductsError, setCompanyProductsLoading]);
+  }, [selectedCompany, lastCompanyId, lastFinancialYear, products.length, setProducts, setProductsLoading, setProductsError]);
 
+  // Auth check
   useEffect(() => {
     if (!hasHydrated) return;
     
@@ -269,12 +287,14 @@ function OrderPageInner() {
     }
   }, [showCart]);
 
+  // Load products when company changes
   useEffect(() => {
     if (selectedCompany && isAuthenticated) {
       loadProducts();
     }
   }, [selectedCompany, isAuthenticated, loadProducts]);
   
+  // Load customers for salesman
   useEffect(() => {
     const loadCustomers = async () => {
       if (user?.role === 'salesman') {
@@ -365,8 +385,6 @@ function OrderPageInner() {
 
   const handlePageChange = (page: number) => {
     setLocalCurrentPage(page);
-    // Scroll to top of products on page change
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   
   if (!hasHydrated) {
@@ -387,15 +405,16 @@ function OrderPageInner() {
   
   return (
     <>
-      {/* Loading progress bar at top of page */}
+      {/* Loading progress bar at top */}
       <LoadingProgressBar 
-        isLoading={productsLoading} 
+        isLoading={isLoadingProducts} 
         message={`Loading products for ${selectedCompany?.companyName || 'company'}...`}
       />
       
       <div className={cn(
-        "space-y-6 pb-14", // Add bottom padding for footer
-        totalItems > 0 && "pb-[4.5rem] lg:pb-14" // Extra padding for mobile cart footer
+        "space-y-6",
+        // Bottom padding for footer
+        totalItems > 0 ? "pb-14" : "pb-10"
       )}>
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -514,13 +533,15 @@ function OrderPageInner() {
           </div>
         )}
         
-        {/* Products Grid */}
-        {productsLoading ? (
+        {/* Products Grid - Show loading indicator during load */}
+        {isLoadingProducts ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading products...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading products for {selectedCompany?.companyName}...
+            </p>
           </div>
-        ) : selectedCompany && products.length === 0 && !productsError ? (
+        ) : showNoProducts ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Package className="h-12 w-12 text-muted-foreground" />
             <p className="text-lg font-medium">No Products Found</p>
@@ -536,7 +557,7 @@ function OrderPageInner() {
               No products match your search criteria.
             </p>
           </div>
-        ) : selectedCompany && (
+        ) : selectedCompany && !productsError && (
           <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {paginatedProducts.map((product) => {
               const quantityInCart = getProductQuantityInCart(product.id);
@@ -762,21 +783,20 @@ function OrderPageInner() {
         </Dialog>
       </div>
       
-      {/* Professional Footer Bar with Pagination - Desktop */}
-      {filteredProducts.length > 0 && (
-        <div className="hidden lg:block">
-          <FooterBar
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={filteredProducts.length}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            onPageChange={handlePageChange}
-          />
-        </div>
+      {/* Desktop Footer Bar - Fixed at bottom */}
+      {filteredProducts.length > 0 && !isLoadingProducts && (
+        <FooterBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredProducts.length}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          onPageChange={handlePageChange}
+          isMobile={false}
+        />
       )}
       
-      {/* Mobile Cart Footer */}
+      {/* Mobile Cart Footer - Fixed at bottom */}
       <MobileCartFooter
         totalItems={totalItems}
         total={total}
@@ -786,17 +806,16 @@ function OrderPageInner() {
       />
       
       {/* Mobile Pagination Footer (only when no cart items) */}
-      {totalItems === 0 && filteredProducts.length > 0 && (
-        <div className="lg:hidden">
-          <FooterBar
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={filteredProducts.length}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            onPageChange={handlePageChange}
-          />
-        </div>
+      {totalItems === 0 && filteredProducts.length > 0 && !isLoadingProducts && (
+        <FooterBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredProducts.length}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          onPageChange={handlePageChange}
+          isMobile={true}
+        />
       )}
     </>
   );

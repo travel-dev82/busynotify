@@ -28,6 +28,7 @@ interface FooterBarProps {
   // Optional features
   showPageSize?: boolean;
   className?: string;
+  isMobile?: boolean;
 }
 
 export function FooterBar({
@@ -38,6 +39,7 @@ export function FooterBar({
   endIndex,
   onPageChange,
   className,
+  isMobile = false,
 }: FooterBarProps) {
   // Generate page numbers to display (show limited pages for clean UI)
   const getPageNumbers = () => {
@@ -78,44 +80,45 @@ export function FooterBar({
 
   return (
     <div className={cn(
-      "sticky bottom-0 z-40 bg-background/95 backdrop-blur-sm border-t",
+      "fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-sm border-t",
+      isMobile ? "lg:hidden" : "hidden lg:block",
       className
     )}>
-      <div className="flex items-center justify-between px-4 py-2.5 gap-4">
+      <div className="flex items-center justify-between px-4 py-1.5 gap-4">
         {/* Left: Item count */}
         <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
-          <Package className="h-4 w-4" />
-          <span className="hidden sm:inline">
+          <Package className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline text-xs">
             {startIndex} - {endIndex} of {totalItems}
           </span>
-          <span className="sm:hidden">
+          <span className="sm:hidden text-xs">
             {startIndex}-{endIndex} / {totalItems}
           </span>
         </div>
 
         {/* Center: Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             {/* First page */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 hidden sm:flex"
+              className="h-6 w-6 hidden sm:flex"
               onClick={() => onPageChange(1)}
               disabled={currentPage === 1}
             >
-              <ChevronsLeft className="h-3.5 w-3.5" />
+              <ChevronsLeft className="h-3 w-3" />
             </Button>
             
             {/* Previous */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-6 w-6"
               onClick={() => onPageChange(currentPage - 1)}
               disabled={currentPage === 1}
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeft className="h-3 w-3" />
             </Button>
             
             {/* Page numbers */}
@@ -123,14 +126,14 @@ export function FooterBar({
               {getPageNumbers().map((page, index) => (
                 <React.Fragment key={index}>
                   {page === 'ellipsis' ? (
-                    <span className="px-1.5 text-xs text-muted-foreground">...</span>
+                    <span className="px-1 text-[10px] text-muted-foreground">...</span>
                   ) : (
                     <Button
                       variant={currentPage === page ? "default" : "ghost"}
                       size="icon"
                       className={cn(
-                        "h-7 w-7 text-xs font-medium",
-                        currentPage === page && "h-7 w-7"
+                        "h-6 w-6 text-[10px] font-medium",
+                        currentPage === page && "h-6 w-6"
                       )}
                       onClick={() => onPageChange(page)}
                     >
@@ -145,32 +148,32 @@ export function FooterBar({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-6 w-6"
               onClick={() => onPageChange(currentPage + 1)}
               disabled={currentPage === totalPages}
             >
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight className="h-3 w-3" />
             </Button>
             
             {/* Last page */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 hidden sm:flex"
+              className="h-6 w-6 hidden sm:flex"
               onClick={() => onPageChange(totalPages)}
               disabled={currentPage === totalPages}
             >
-              <ChevronsRight className="h-3.5 w-3.5" />
+              <ChevronsRight className="h-3 w-3" />
             </Button>
           </div>
         )}
 
         {/* Right: Page jump & info */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {totalPages > 1 && (
             <>
-              <span className="text-xs text-muted-foreground hidden md:inline">
-                Page
+              <span className="text-[10px] text-muted-foreground hidden md:inline">
+                Pg
               </span>
               <Input
                 type="number"
@@ -183,9 +186,9 @@ export function FooterBar({
                     onPageChange(page);
                   }
                 }}
-                className="w-12 h-7 text-center text-xs px-1"
+                className="w-10 h-6 text-center text-[10px] px-0"
               />
-              <span className="text-xs text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground">
                 / {totalPages}
               </span>
             </>
@@ -217,28 +220,28 @@ export function MobileCartFooter({
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
       <div className="bg-background/95 backdrop-blur-sm border-t shadow-lg">
-        <div className="flex items-center justify-between px-4 py-2.5">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <Package className="h-4 w-4 text-primary" />
-              <span className="font-semibold text-sm">{totalItems}</span>
-              <span className="text-xs text-muted-foreground">items</span>
-            </div>
-            <div className="h-4 w-px bg-border" />
-            <span className="font-bold text-sm">{formatCurrency(total)}</span>
-          </div>
+        <div className="flex items-center justify-between px-4 py-1.5">
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <Package className="h-3.5 w-3.5 text-primary" />
+              <span className="font-semibold text-xs">{totalItems}</span>
+              <span className="text-[10px] text-muted-foreground">items</span>
+            </div>
+            <div className="h-3 w-px bg-border" />
+            <span className="font-bold text-xs">{formatCurrency(total)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 text-xs text-destructive hover:text-destructive"
+              className="h-7 text-[10px] text-destructive hover:text-destructive px-2"
               onClick={onClearCart}
             >
               Clear
             </Button>
             <Button
               size="sm"
-              className="h-8 text-xs"
+              className="h-7 text-[10px] px-2"
               onClick={onViewCart}
             >
               View Cart
