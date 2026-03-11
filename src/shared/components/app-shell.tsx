@@ -23,6 +23,7 @@ import { useTranslation } from '../lib/language-context';
 import { getNavigationForRole } from '../config/navigation.config';
 import { UserMenu } from './user-menu';
 import { CompanySelector } from './company-selector';
+import { HeaderActionProvider, useHeaderActions } from '../lib/header-action-context';
 import type { Role, NavigationItem } from '../types';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -37,9 +38,18 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  return (
+    <HeaderActionProvider>
+      <AppShellContent>{children}</AppShellContent>
+    </HeaderActionProvider>
+  );
+}
+
+function AppShellContent({ children }: AppShellProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const { user } = useAuthStore();
+  const { headerActions } = useHeaderActions();
   const t = useTranslation();
   
   const role = user?.role as Role;
@@ -106,7 +116,8 @@ export function AppShell({ children }: AppShellProps) {
         </Link>
         <div className="ml-auto flex items-center gap-2">
           <CompanySelector />
-          <CartBadge />
+          {/* Dynamic header actions from page context */}
+          {headerActions}
           <UserMenu />
         </div>
       </header>
@@ -142,7 +153,8 @@ export function AppShell({ children }: AppShellProps) {
           <header className="sticky top-0 z-40 hidden h-14 items-center justify-between border-b bg-background px-6 lg:flex">
             <CompanySelector />
             <div className="flex items-center gap-2">
-              <CartBadge />
+              {/* Dynamic header actions from page context */}
+              {headerActions}
             </div>
           </header>
           

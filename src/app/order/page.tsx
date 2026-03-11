@@ -1,10 +1,10 @@
 // =====================================================
-// ORDER PAGE - Product Listing and Cart
+// ORDER PAGE - Product Listing with Pagination and Cart
 // =====================================================
 
 'use client';
 
-import React, { useEffect, useState, Suspense, useCallback } from 'react';
+import React, { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,15 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { 
   ShoppingCart, 
   Search, 
@@ -59,15 +68,61 @@ import {
   useHasHydrated,
   useCompanyStore,
   useProductStore,
+  usePaginationStore,
   fetchProducts,
 } from '@/shared/lib/stores';
 import { useTranslation } from '@/shared/lib/language-context';
 import { AppShell } from '@/shared/components/app-shell';
 import { formatCurrency } from '@/shared/components/format-currency';
+import { useSetHeaderActions } from '@/shared/lib/header-action-context';
 import { customerService, orderService } from '@/versions/v1/services';
 import type { ProductDisplay, Customer, ProductCategory } from '@/shared/types';
 
-function OrderPageContent() {
+// Constants
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PRODUCTS = 25000;
+
+// Header Actions Component - Renders in AppShell header
+function OrderHeaderActions({ 
+  totalItems, 
+  total, 
+  onOpenCart, 
+  onClearCart 
+}: { 
+  totalItems: number; 
+  total: number;
+  onOpenCart: () => void;
+  onClearCart: () => void;
+}) {
+  const t = useTranslation();
+  
+  return (
+    <div className="flex items-center gap-2">
+      {totalItems > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs text-destructive hover:text-destructive hidden sm:flex"
+          onClick={onClearCart}
+        >
+          Clear
+        </Button>
+      )}
+      <Button onClick={onOpenCart} className="relative" size="sm">
+        <ShoppingCart className="mr-2 h-4 w-4" />
+        {t.common.cart}
+        {totalItems > 0 && (
+          <Badge className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 flex items-center justify-center">
+            {totalItems}
+          </Badge>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+// Inner content component that sets header actions (must be inside AppShell)
+function OrderPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const showCart = searchParams.get('cart') === 'true';
@@ -77,7 +132,6 @@ function OrderPageContent() {
   const { selectedCompany } = useCompanyStore();
   const { 
     products, 
-    rawProducts,
     isLoading: productsLoading, 
     error: productsError,
     setProducts,
@@ -101,8 +155,10 @@ function OrderPageContent() {
     setCustomer,
     clearCustomer,
   } = useCartStore();
+  const { pageSize } = usePaginationStore();
   const t = useTranslation();
   
+  // Local state
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -112,6 +168,82 @@ function OrderPageContent() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [currentPage, setLocalCurrentPage] = useState(1);
+
+  // Calculate total pages and paginated products
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+      const matchesCategory = selectedCategory === 'all' || p.groupName === selectedCategory;
+      const matchesSearch = !searchQuery || 
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.productId.toString().includes(searchQuery);
+      return matchesCategory && matchesSearch;
+    });
+  }, [products, selectedCategory, searchQuery]);
+
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredProducts.length / pageSize);
+  }, [filteredProducts.length, pageSize]);
+
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, filteredProducts.length);
+    return filteredProducts.slice(startIndex, endIndex);
+  }, [filteredProducts, currentPage, pageSize]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setLocalCurrentPage(1);
+  }, [selectedCategory, searchQuery]);
+
+  // Generate page numbers to display
+  const getPageNumbers = useCallback(() => {
+    const pages: (number | 'ellipsis')[] = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages + 2) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push('ellipsis');
+      }
+      
+      const startPage = Math.max(2, currentPage - 1);
+      const endPage = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pages.push(i);
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push('ellipsis');
+      }
+      
+      if (totalPages > 1) {
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  }, [currentPage, totalPages]);
+
+  // Header actions - rendered in AppShell header
+  const headerActions = useMemo(() => (
+    <OrderHeaderActions
+      totalItems={totalItems}
+      total={total}
+      onOpenCart={() => setShowCartDialog(true)}
+      onClearCart={clearCart}
+    />
+  ), [totalItems, total, clearCart]);
+
+  // Set header actions in AppShell - this hook must be called inside AppShell
+  useSetHeaderActions(headerActions);
 
   // Fetch products when company changes
   const loadProducts = useCallback(async () => {
@@ -120,7 +252,6 @@ function OrderPageContent() {
     const companyId = selectedCompany.companyId;
     const financialYear = selectedCompany.financialYear;
     
-    // Skip if already loaded for this company
     if (lastCompanyId === companyId && lastFinancialYear === financialYear && products.length > 0) {
       return;
     }
@@ -134,7 +265,6 @@ function OrderPageContent() {
       if (result.success && result.data && result.rawData && result.apiResponse) {
         setProducts(result.data, result.rawData, result.apiResponse, selectedCompany);
         
-        // Extract unique categories from products
         const uniqueGroups = [...new Set(result.data.map(p => p.groupName))];
         const categoryList: ProductCategory[] = uniqueGroups.map((name, index) => ({
           id: index.toString(),
@@ -151,10 +281,8 @@ function OrderPageContent() {
   }, [selectedCompany, lastCompanyId, lastFinancialYear, products.length, setProducts, setProductsLoading, setProductsError]);
 
   useEffect(() => {
-    // Only run after hydration is complete
     if (!hasHydrated) return;
     
-    // Small delay to ensure store is fully hydrated
     const timer = setTimeout(() => {
       if (!isAuthenticated || !user) {
         window.location.href = '/login';
@@ -170,14 +298,12 @@ function OrderPageContent() {
     }
   }, [showCart]);
 
-  // Load products when company changes
   useEffect(() => {
     if (selectedCompany && isAuthenticated) {
       loadProducts();
     }
   }, [selectedCompany, isAuthenticated, loadProducts]);
   
-  // Load customers if salesman
   useEffect(() => {
     const loadCustomers = async () => {
       if (user?.role === 'salesman') {
@@ -194,23 +320,12 @@ function OrderPageContent() {
       loadCustomers();
     }
   }, [isAuthenticated, user]);
-
-  // Filter products by category and search
-  const filteredProducts = products.filter(p => {
-    const matchesCategory = selectedCategory === 'all' || p.groupName === selectedCategory;
-    const matchesSearch = !searchQuery || 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.productId.toString().includes(searchQuery);
-    return matchesCategory && matchesSearch;
-  });
   
   const filteredCustomers = customers.filter(c => 
     c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
     c.phone.includes(customerSearch)
   );
 
-  // Helper to convert ProductDisplay to legacy Product format for cart
   const convertToCartProduct = (product: ProductDisplay) => ({
     id: product.id,
     sku: product.hsnCode,
@@ -237,13 +352,11 @@ function OrderPageContent() {
   const handlePlaceOrder = async () => {
     if (items.length === 0) return;
     
-    // For salesman, ensure customer is selected
     if (user?.role === 'salesman' && !customerId) {
       setShowCustomerSelect(true);
       return;
     }
     
-    // For customer, use their own ID
     const orderCustomerId = user?.role === 'customer' ? `cust_${user.id}` : customerId;
     const orderCustomerName = user?.role === 'customer' ? user.name : customerName;
     
@@ -279,7 +392,6 @@ function OrderPageContent() {
     }
   };
   
-  // Don't render until hydrated to avoid hydration issues
   if (!hasHydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -297,162 +409,164 @@ function OrderPageContent() {
   }
   
   return (
-    <AppShell>
-      <div className={cn("space-y-6", totalItems > 0 && "pb-20 lg:pb-0")}>
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{t.order.title}</h1>
-            <p className="text-muted-foreground">
-              {selectedCompany 
-                ? `${selectedCompany.companyName} - FY: ${selectedCompany.financialYear}`
-                : 'Select a company to view products'}
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
-            {user.role === 'salesman' && (
-              <Popover open={showCustomerSelect} onOpenChange={setShowCustomerSelect}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline">
-                    {customerName || t.order.selectCustomer}
-                    <ChevronsUpDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="start">
-                  <Command>
-                    <CommandInput 
-                      placeholder={t.order.searchCustomer}
-                      value={customerSearch}
-                      onValueChange={setCustomerSearch}
-                    />
-                    <CommandList>
-                      <CommandEmpty>No customer found.</CommandEmpty>
-                      <CommandGroup>
-                        {filteredCustomers.map((customer) => (
-                          <CommandItem
-                            key={customer.id}
-                            value={customer.id}
-                            onSelect={() => {
-                              setCustomer(customer.id, customer.name);
-                              setShowCustomerSelect(false);
-                              setCustomerSearch('');
-                            }}
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                customerId === customer.id ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                            <div className="flex flex-col">
-                              <span>{customer.name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {customer.phone} • {customer.city}
-                              </span>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            )}
-            
-            <Button onClick={() => setShowCartDialog(true)} className="relative">
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              {t.common.cart}
-              {totalItems > 0 && (
-                <Badge className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 flex items-center justify-center">
-                  {totalItems}
-                </Badge>
-              )}
-            </Button>
-          </div>
+    <div className={cn("space-y-6", totalItems > 0 && "pb-20 lg:pb-0")}>
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t.order.title}</h1>
+          <p className="text-muted-foreground">
+            {selectedCompany 
+              ? `${selectedCompany.companyName} - FY: ${selectedCompany.financialYear}`
+              : 'Select a company to view products'}
+          </p>
         </div>
         
-        {/* Company not selected warning */}
-        {!selectedCompany && (
-          <Card className="border-yellow-200 bg-yellow-50">
-            <CardContent className="flex items-center gap-3 p-4">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="font-medium text-yellow-800">No Company Selected</p>
-                <p className="text-sm text-yellow-700">
-                  Please select a company from the header dropdown to view products.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {/* Error state */}
-        {productsError && (
-          <Card className="border-destructive bg-destructive/10">
-            <CardContent className="flex items-center gap-3 p-4">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              <div>
-                <p className="font-medium text-destructive">Error Loading Products</p>
-                <p className="text-sm text-destructive/80">{productsError}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={loadProducts} className="ml-auto">
-                Retry
+        {user.role === 'salesman' && (
+          <Popover open={showCustomerSelect} onOpenChange={setShowCustomerSelect}>
+            <PopoverTrigger asChild>
+              <Button variant="outline">
+                {customerName || t.order.selectCustomer}
+                <ChevronsUpDown className="ml-2 h-4 w-4" />
               </Button>
-            </CardContent>
-          </Card>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="start">
+              <Command>
+                <CommandInput 
+                  placeholder={t.order.searchCustomer}
+                  value={customerSearch}
+                  onValueChange={setCustomerSearch}
+                />
+                <CommandList>
+                  <CommandEmpty>No customer found.</CommandEmpty>
+                  <CommandGroup>
+                    {filteredCustomers.map((customer) => (
+                      <CommandItem
+                        key={customer.id}
+                        value={customer.id}
+                        onSelect={() => {
+                          setCustomer(customer.id, customer.name);
+                          setShowCustomerSelect(false);
+                          setCustomerSearch('');
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            customerId === customer.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <div className="flex flex-col">
+                          <span>{customer.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {customer.phone} • {customer.city}
+                          </span>
+                        </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         )}
-        
-        {/* Filters */}
-        {selectedCompany && (
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, HSN code, or product ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
+      </div>
+      
+      {!selectedCompany && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="flex items-center gap-3 p-4">
+            <AlertCircle className="h-5 w-5 text-yellow-600" />
+            <div>
+              <p className="font-medium text-yellow-800">No Company Selected</p>
+              <p className="text-sm text-yellow-700">
+                Please select a company from the header dropdown to view products.
+              </p>
             </div>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder={t.order.category} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t.order.allCategories}</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.name}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          </CardContent>
+        </Card>
+      )}
+      
+      {productsError && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardContent className="flex items-center gap-3 p-4">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <div>
+              <p className="font-medium text-destructive">Error Loading Products</p>
+              <p className="text-sm text-destructive/80">{productsError}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadProducts} className="ml-auto">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      
+      {selectedCompany && (
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, HSN code, or product ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
           </div>
-        )}
-        
-        {/* Products Grid - 2 cols on mobile, 6 cols on desktop */}
-        {productsLoading ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading products...</p>
-          </div>
-        ) : selectedCompany && products.length === 0 && !productsError ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-2">
-            <Package className="h-12 w-12 text-muted-foreground" />
-            <p className="text-lg font-medium">No Products Found</p>
-            <p className="text-sm text-muted-foreground">
-              No products available for this company.
-            </p>
-          </div>
-        ) : selectedCompany && (
+          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder={t.order.category} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t.order.allCategories}</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.name}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {selectedCompany && filteredProducts.length > 0 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Showing {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredProducts.length)} of {filteredProducts.length} products
+          </span>
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+        </div>
+      )}
+      
+      {productsLoading ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading products...</p>
+        </div>
+      ) : selectedCompany && products.length === 0 && !productsError ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-2">
+          <Package className="h-12 w-12 text-muted-foreground" />
+          <p className="text-lg font-medium">No Products Found</p>
+          <p className="text-sm text-muted-foreground">
+            No products available for this company.
+          </p>
+        </div>
+      ) : selectedCompany && filteredProducts.length === 0 && searchQuery ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-2">
+          <Search className="h-12 w-12 text-muted-foreground" />
+          <p className="text-lg font-medium">No Results</p>
+          <p className="text-sm text-muted-foreground">
+            No products match your search criteria.
+          </p>
+        </div>
+      ) : selectedCompany && (
+        <>
           <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {filteredProducts.map((product) => {
+            {paginatedProducts.map((product) => {
               const quantityInCart = getProductQuantityInCart(product.id);
               
               return (
                 <Card key={product.id} className="overflow-hidden">
-                  {/* Smaller image area */}
                   <div className="aspect-square bg-muted flex items-center justify-center">
                     <Package className="h-8 w-8 text-muted-foreground sm:h-10 sm:w-10" />
                   </div>
@@ -544,173 +658,261 @@ function OrderPageContent() {
               );
             })}
           </div>
-        )}
-        
-        {/* Mobile Sticky Cart Footer */}
-        {totalItems > 0 && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
-            <div className="bg-background/95 backdrop-blur-sm border-t shadow-lg">
-              <div className="flex items-center justify-between px-4 py-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1">
-                    <ShoppingCart className="h-4 w-4 text-primary" />
-                    <span className="font-medium text-sm">{totalItems}</span>
-                    <span className="text-xs text-muted-foreground">items</span>
-                  </div>
-                  <Separator orientation="vertical" className="h-4" />
-                  <div>
-                    <span className="font-bold text-sm">{formatCurrency(total)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs text-destructive hover:text-destructive"
-                    onClick={clearCart}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setShowCartDialog(true)}
-                  >
-                    View Cart
-                  </Button>
-                </div>
-              </div>
-            </div>
-            {/* Safe area padding for iOS */}
-            <div className="h-[env(safe-area-inset-bottom)] bg-background/95" />
-          </div>
-        )}
-        
-        {/* Cart Dialog */}
-        <Dialog open={showCartDialog} onOpenChange={setShowCartDialog}>
-          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle>{t.cart.title}</DialogTitle>
-              <DialogDescription>
-                {totalItems} {t.cart.items}
-              </DialogDescription>
-            </DialogHeader>
-            
-            {items.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground">
-                {t.cart.empty}
-              </div>
-            ) : (
-              <>
-                <ScrollArea className="flex-1 -mx-6 px-6">
-                  <div className="space-y-4 py-4">
-                    {items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded bg-muted flex items-center justify-center">
-                          <Package className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{item.product.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatCurrency(item.unitPrice)} × {item.quantity}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                          >
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <span className="w-6 text-center text-sm">{item.quantity}</span>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            disabled={item.quantity >= item.product.stock}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <p className="font-medium w-20 text-right">
-                          {formatCurrency(item.totalPrice)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-                
-                <div className="space-y-4 pt-4 border-t">
-                  {user?.role === 'salesman' && customerName && (
-                    <div className="text-sm text-muted-foreground">
-                      {t.cart.orderFor}: <span className="font-medium text-foreground">{customerName}</span>
-                    </div>
+
+          {totalPages > 1 && (
+            <div className="flex flex-col items-center gap-4 py-4">
+              <Pagination>
+                <PaginationContent>
+                  {currentPage > 2 && (
+                    <PaginationItem>
+                      <PaginationLink 
+                        onClick={() => setLocalCurrentPage(1)}
+                        className="cursor-pointer"
+                      >
+                        First
+                      </PaginationLink>
+                    </PaginationItem>
                   )}
                   
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">{t.cart.subtotal}</span>
-                      <span>{formatCurrency(subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">{t.cart.tax}</span>
-                      <span>{formatCurrency(tax)}</span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between font-bold text-lg">
-                      <span>{t.cart.grandTotal}</span>
-                      <span>{formatCurrency(total)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={clearCart} className="flex-1">
-                      {t.cart.clearCart}
-                    </Button>
-                    <Button 
-                      onClick={handlePlaceOrder} 
-                      className="flex-1"
-                      disabled={isPlacingOrder || (user?.role === 'salesman' && !customerId)}
-                    >
-                      {isPlacingOrder ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Placing...
-                        </>
-                      ) : (
-                        t.cart.placeOrder
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={() => setLocalCurrentPage(Math.max(1, currentPage - 1))}
+                      className={cn(
+                        "cursor-pointer",
+                        currentPage === 1 && "pointer-events-none opacity-50"
                       )}
-                    </Button>
+                    />
+                  </PaginationItem>
+                  
+                  {getPageNumbers().map((page, index) => (
+                    <PaginationItem key={index}>
+                      {page === 'ellipsis' ? (
+                        <PaginationEllipsis />
+                      ) : (
+                        <PaginationLink
+                          onClick={() => setLocalCurrentPage(page)}
+                          isActive={currentPage === page}
+                          className="cursor-pointer"
+                        >
+                          {page}
+                        </PaginationLink>
+                      )}
+                    </PaginationItem>
+                  ))}
+                  
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={() => setLocalCurrentPage(Math.min(totalPages, currentPage + 1))}
+                      className={cn(
+                        "cursor-pointer",
+                        currentPage === totalPages && "pointer-events-none opacity-50"
+                      )}
+                    />
+                  </PaginationItem>
+                  
+                  {currentPage < totalPages - 1 && (
+                    <PaginationItem>
+                      <PaginationLink 
+                        onClick={() => setLocalCurrentPage(totalPages)}
+                        className="cursor-pointer"
+                      >
+                        Last
+                      </PaginationLink>
+                    </PaginationItem>
+                  )}
+                </PaginationContent>
+              </Pagination>
+              
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Go to page:</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={currentPage}
+                  onChange={(e) => {
+                    const page = parseInt(e.target.value);
+                    if (page >= 1 && page <= totalPages) {
+                      setLocalCurrentPage(page);
+                    }
+                  }}
+                  className="w-16 h-8 text-center"
+                />
+                <span className="text-muted-foreground">of {totalPages}</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      
+      {totalItems > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
+          <div className="bg-background/95 backdrop-blur-sm border-t shadow-lg">
+            <div className="flex items-center justify-between px-4 py-2">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <ShoppingCart className="h-4 w-4 text-primary" />
+                  <span className="font-medium text-sm">{totalItems}</span>
+                  <span className="text-xs text-muted-foreground">items</span>
+                </div>
+                <Separator orientation="vertical" className="h-4" />
+                <div>
+                  <span className="font-bold text-sm">{formatCurrency(total)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-destructive hover:text-destructive"
+                  onClick={clearCart}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setShowCartDialog(true)}
+                >
+                  View Cart
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="h-[env(safe-area-inset-bottom)] bg-background/95" />
+        </div>
+      )}
+      
+      <Dialog open={showCartDialog} onOpenChange={setShowCartDialog}>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{t.cart.title}</DialogTitle>
+            <DialogDescription>
+              {totalItems} {t.cart.items}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {items.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              {t.cart.empty}
+            </div>
+          ) : (
+            <>
+              <ScrollArea className="flex-1 -mx-6 px-6">
+                <div className="space-y-4 py-4">
+                  {items.map((item) => (
+                    <div key={item.id} className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded bg-muted flex items-center justify-center">
+                        <Package className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{item.product.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatCurrency(item.unitPrice)} × {item.quantity}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        >
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-6 text-center text-sm">{item.quantity}</span>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          disabled={item.quantity >= item.product.stock}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <p className="font-medium w-20 text-right">
+                        {formatCurrency(item.totalPrice)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+              
+              <div className="space-y-4 pt-4 border-t">
+                {user?.role === 'salesman' && customerName && (
+                  <div className="text-sm text-muted-foreground">
+                    {t.cart.orderFor}: <span className="font-medium text-foreground">{customerName}</span>
+                  </div>
+                )}
+                
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{t.cart.subtotal}</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{t.cart.tax}</span>
+                    <span>{formatCurrency(tax)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>{t.cart.grandTotal}</span>
+                    <span>{formatCurrency(total)}</span>
                   </div>
                 </div>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
-        
-        {/* Order Success Dialog */}
-        <Dialog open={orderSuccess} onOpenChange={setOrderSuccess}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="text-green-600">{t.cart.orderSuccess}</DialogTitle>
-              <DialogDescription>
-                {t.cart.orderSuccessMessage}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button onClick={() => {
-                setOrderSuccess(false);
-                router.push('/orders');
-              }}>
-                {t.dashboard.viewAllOrders}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+                
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={clearCart} className="flex-1">
+                    {t.cart.clearCart}
+                  </Button>
+                  <Button 
+                    onClick={handlePlaceOrder} 
+                    className="flex-1"
+                    disabled={isPlacingOrder || (user?.role === 'salesman' && !customerId)}
+                  >
+                    {isPlacingOrder ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Placing...
+                      </>
+                    ) : (
+                      t.cart.placeOrder
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={orderSuccess} onOpenChange={setOrderSuccess}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-green-600">{t.cart.orderSuccess}</DialogTitle>
+            <DialogDescription>
+              {t.cart.orderSuccessMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => {
+              setOrderSuccess(false);
+              router.push('/orders');
+            }}>
+              {t.dashboard.viewAllOrders}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function OrderPageContent() {
+  return (
+    <AppShell>
+      <OrderPageInner />
     </AppShell>
   );
 }
