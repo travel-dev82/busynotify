@@ -4,16 +4,33 @@
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore, useHasHydrated } from '@/shared/lib/stores';
 
+// Maximum time to wait for hydration before forcing redirect
+const HYDRATION_TIMEOUT = 3000;
+
 export default function HomePage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, setHasHydrated } = useAuthStore();
   const hasHydrated = useHasHydrated();
+  const [forceRedirect, setForceRedirect] = useState(false);
+  
+  useEffect(() => {
+    // Safety timeout - force hydration after timeout
+    const safetyTimer = setTimeout(() => {
+      if (!hasHydrated) {
+        console.warn('Hydration timeout - forcing redirect');
+        setHasHydrated(true);
+        setForceRedirect(true);
+      }
+    }, HYDRATION_TIMEOUT);
+    
+    return () => clearTimeout(safetyTimer);
+  }, [hasHydrated, setHasHydrated]);
   
   useEffect(() => {
     // Wait for hydration before redirecting
-    if (!hasHydrated) return;
+    if (!hasHydrated && !forceRedirect) return;
     
     // Use window.location.href for full page reload to ensure
     // destination page reads fresh state from localStorage
@@ -26,7 +43,7 @@ export default function HomePage() {
     }, 50);
     
     return () => clearTimeout(timer);
-  }, [hasHydrated, isAuthenticated]);
+  }, [hasHydrated, isAuthenticated, forceRedirect]);
   
   return (
     <div className="flex min-h-screen items-center justify-center">
