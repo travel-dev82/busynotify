@@ -22,6 +22,7 @@ import { useAuthStore, useCartStore } from '../lib/stores';
 import { useTranslation } from '../lib/language-context';
 import { getNavigationForRole } from '../config/navigation.config';
 import { UserMenu } from './user-menu';
+import { CompanySelector } from './company-selector';
 import type { Role, NavigationItem } from '../types';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -104,6 +105,7 @@ export function AppShell({ children }: AppShellProps) {
           <span>{t.common.appName}</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
+          <CompanySelector />
           <CartBadge />
           <UserMenu />
         </div>
@@ -134,12 +136,23 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         </aside>
         
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="container mx-auto max-w-7xl p-4 lg:p-6">
-            {children}
-          </div>
-        </main>
+        {/* Main Content Area with Header */}
+        <div className="flex flex-1 flex-col">
+          {/* Desktop Header Bar */}
+          <header className="sticky top-0 z-40 hidden h-14 items-center justify-between border-b bg-background px-6 lg:flex">
+            <CompanySelector />
+            <div className="flex items-center gap-2">
+              <CartBadge />
+            </div>
+          </header>
+          
+          {/* Main Content */}
+          <main className="flex-1 overflow-auto">
+            <div className="container mx-auto max-w-7xl p-4 lg:p-6">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -28,6 +28,24 @@ export interface AuthSession {
   expiresAt: number;
 }
 
+// ==================== COMPANY ====================
+
+export interface Company {
+  companyId: number;
+  companyName: string;
+  financialYear: string;
+  erpCode: string;
+}
+
+export interface CompanyApiResponse {
+  success: boolean;
+  data: Company[];
+  metadata: {
+    rowCount: number;
+    executedAt: string;
+  };
+}
+
 // ==================== CUSTOMER ====================
 
 export interface Customer {

@@ -17,17 +17,19 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { LogOut, User, Settings } from 'lucide-react';
-import { useAuthStore } from '../lib/stores';
+import { useAuthStore, useCompanyStore } from '../lib/stores';
 import { useTranslation } from '../lib/language-context';
 import { LanguageSwitcher } from './language-switcher';
 
 export function UserMenu() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const { clearCompany } = useCompanyStore();
   const t = useTranslation();
   
   const handleLogout = () => {
     logout();
+    clearCompany();
     router.push('/login');
   };
   
